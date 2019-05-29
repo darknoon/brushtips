@@ -1,17 +1,15 @@
-import {
-  length,
-  sub,
-  lerp,
-  mulc,
-  point2d,
-  point2dx4,
-  evalBezier
-} from "./point.js";
+import { length, sub, point2d, point2dx4, evalBezier } from "./point.js";
+
 import { makeProgram } from "./glUtil.js";
 
 interface BrushOutput {
   drawBrush(x: number, y: number, size: number, color: ColorArray): void;
 }
+
+type Stroke = {
+  points: point2d[];
+};
+
 class Controller implements BrushOutput {
   sizeSlider: HTMLInputElement;
   clearButton: HTMLButtonElement;
@@ -22,6 +20,8 @@ class Controller implements BrushOutput {
   programAttribs: { [name: string]: GLint };
 
   canvasSize: { width: number; height: number };
+
+  private currentStroke: Stroke | null = null;
 
   initGL(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
@@ -130,21 +130,30 @@ class Controller implements BrushOutput {
 
   // Used as event handler
   clearContext = () => {
-    const gl = this.gl;
+    const { gl } = this;
     gl.clearColor(1, 1, 1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // const bez = [
-    //   {x: 10, y: 10},
-    //   {x: 10, y: 200},
-    //   {x: 400 - 10, y: 200},
-    //   {x: 400 - 10, y: 10},
-    // ];
-    // const pts = evalBezier(bez);
-    // pts.forEach(pt => {
-    //   drawBrush(pt.x, pt.y, 10, [0,0,0,1]);
-    // });
+    const basicStroke = {
+      points: [
+        { x: 10, y: 10, t: 0 },
+        { x: 10, y: 200, t: 100 },
+        { x: 400 - 10, y: 200, t: 200 },
+        { x: 400 - 10, y: 10, t: 400 }
+      ]
+    };
+
+    this.drawStroke(basicStroke);
   };
+
+  drawStroke(stroke: Stroke) {
+    const pp = _pointProcessor(
+      this.getBrushSize(),
+      this.getStepSize(),
+      this.drawBrush.bind(this)
+    );
+    stroke.points.forEach(p => pp.next(p));
+  }
 
   mouseToGL(x: number, y: number) {
     const {
@@ -161,6 +170,8 @@ class Controller implements BrushOutput {
 
     const options = {};
 
+    const stroke: Stroke = { points: [] };
+
     // Create a point processor for this stroke
     const pointProcessor = _pointProcessor(
       this.getBrushSize(),
@@ -172,7 +183,9 @@ class Controller implements BrushOutput {
       // Coalesced events is poorly supported, but works better for high input rate
       // const events =
       //   "getCoalescedEvents" in event ? event.getCoalescedEvents() : [event];
-      pointProcessor.next({ x: e.pageX, y: e.pageY, t: e.timeStamp });
+      const pt = { x: e.pageX, y: e.pageY, t: e.timeStamp };
+      pointProcessor.next(pt);
+      stroke.points.push(pt);
     };
 
     // On mouse movement, process the event
@@ -183,6 +196,8 @@ class Controller implements BrushOutput {
       processEvent(e);
       document.removeEventListener("mousemove", processEvent, options);
       document.removeEventListener("mouseup", done, options);
+      this.currentStroke = stroke;
+      this.drawStroke(stroke);
     };
     document.addEventListener("mouseup", done, options);
 
