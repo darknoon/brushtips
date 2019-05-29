@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebGLPaint w/ Spline</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+
+  <body>
+    <script id="vertex-shader" type="x-shader/x-vertex">
+      precision mediump float;
+      attribute vec2 coord;
+      uniform vec2 brushPosition;
+      uniform float brushSize;
+      varying vec2 vCoord;
+      void main() {
+        vCoord = coord;
+        gl_Position = vec4(brushPosition + brushSize * coord, 0.0, 1.0);
+      }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+      precision mediump float;
+      uniform vec4 brushColor;
+      uniform float brushSharpness;
+
+      varying vec2 vCoord;
+
+      void main() {
+        vCoord;
+        float alpha = 1.0 - smoothstep(brushSharpness, 1.0, length(vCoord));
+        gl_FragColor = vec4(brushColor.rgb, alpha * brushColor.a);
+      }
+    </script>
+
+    <div id="wrapper">
+      <canvas id="draw" style="width: 400px; height: 400px"></canvas>
+    </div>
+
+    <label>Size<input type="range" id="sizeSlider" min="2" max="20"/></label>
+    <button id="clear">Clear</button>
+
+    <script type="module" src="js/index.mjs"></script>
+  </body>
+</html>
