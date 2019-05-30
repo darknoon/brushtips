@@ -1,6 +1,13 @@
 // Type definitions to simplify code
-export type Point2D = { x: number; y: number };
-export type Dot2D = { x: number; y: number; r: number };
+export interface Point2D {
+  x: number;
+  y: number;
+}
+export interface Dot2D {
+  x: number;
+  y: number;
+  r: number;
+}
 export type Dot2Dx4 = [Dot2D, Dot2D, Dot2D, Dot2D];
 
 export const add = (pt1: Point2D, pt2: Point2D) => ({
