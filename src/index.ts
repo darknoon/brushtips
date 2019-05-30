@@ -1,8 +1,5 @@
 import { PaintContextI, PaintContextWebGL } from "./PaintContext.js";
-import {
-  _pointProcessor as PointProcessor,
-  TimedPoint
-} from "./PointProcessor.js";
+import PointProcessor, { TimedPoint } from "./PointProcessor.js";
 import { Parameters } from "./Parameters.js";
 import { colorToHex, parseHex } from "./Color.js";
 
@@ -64,7 +61,7 @@ class Controller {
 
     this.output = new PaintContextWebGL(canvas);
 
-    loadExample("face").then(s => {
+    loadExample("spiral").then(s => {
       this.currentStroke = s;
       this.showStroke(s);
       this.drawStroke(s, this.parameters);
@@ -131,12 +128,20 @@ class Controller {
 
     const startTime = e.timeStamp;
 
-    const processEvent = (e: MouseEvent) => {
-      const pt = {
-        x: e.pageX,
-        y: e.pageY,
-        t: Math.floor(e.timeStamp - startTime)
+    const getRelativePosition = (e: MouseEvent) => {
+      const { pageX, pageY, timeStamp: t } = e;
+      const { left, top } = this.canvas.getBoundingClientRect();
+      return {
+        // Account for offset of element on page relative to mouse position
+        x: pageX - left,
+        y: pageY - top,
+        // Round to the nearest millisecond to keep JSON clean
+        t: Math.floor(t - startTime)
       };
+    };
+
+    const processEvent = (e: MouseEvent) => {
+      const pt = getRelativePosition(e);
       pointProcessor.next(pt);
       stroke.points.push(pt);
     };
@@ -154,7 +159,6 @@ class Controller {
     };
     document.addEventListener("mouseup", done);
 
-    // pointProcessor.next();
     processEvent(e);
   };
 }

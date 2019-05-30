@@ -2,6 +2,7 @@ import { sub, length, evalBezier, Point2D } from "./point.js";
 import { catmullRomToBezier } from "./math.js";
 import { FloatColor } from "./Color.js";
 import { Parameters } from "./Parameters.js";
+import { DrawBrushFn } from "./PaintContext.js";
 
 export interface TimedPoint {
   x: number;
@@ -32,12 +33,7 @@ export default function* PointProcessor(
     opacity,
     debug = false
   }: Parameters,
-  drawBrush: (
-    pt: Point2D,
-    size: number,
-    blur: number,
-    color: FloatColor
-  ) => void
+  drawBrush: DrawBrushFn
 ): PointProcessorI {
   const minSize = brushSize / 2;
 
@@ -49,19 +45,18 @@ export default function* PointProcessor(
   ];
 
   // Taking a constant size for now
-  const addSize = (p: TimedPoint) => ({ ...p, r: minSize });
+  const addSize = (p: TimedPoint, r = minSize) => ({ ...p, r: minSize });
 
-  let p0 = addSize(yield);
+  let p0 = addSize(yield, minSize);
   let p1 = addSize(yield);
   let p2 = addSize(yield);
   let p3 = addSize(yield);
 
-  let dt = 100;
   let speed = 0;
   const vk = 0.5;
 
   while (true) {
-    const newPt = yield;
+    const newPt: TimedPoint & { r: number } = addSize(yield);
 
     // TODO: handle new points in a smarter way, don't just reject
     if (length(sub(p3, newPt)) > minDist) {
@@ -84,7 +79,7 @@ export default function* PointProcessor(
       const ptCount = (length(sub(p0, p3)) / stepSize) * 1.5;
       const pts = evalBezier(bez, ptCount);
       pts.forEach(pt => {
-        drawBrush(pt, brushSize, blur, finalColor as FloatColor);
+        drawBrush(pt, pt.r, blur, finalColor as FloatColor);
       });
     }
   }
@@ -101,12 +96,7 @@ export function* _pointProcessor(
     opacity,
     debug = false
   }: Parameters,
-  drawBrush: (
-    pt: Point2D,
-    size: number,
-    blur: number,
-    color: FloatColor
-  ) => void
+  drawBrush: DrawBrushFn
 ): PointProcessorI {
   // Accept 4 input points before starting interpolation and drawing
   let p0 = yield;

@@ -2,12 +2,18 @@ import { makeProgram } from "./glUtil.js";
 import { Point2D } from "./point.js";
 import { FloatColor, parseHex } from "./Color.js";
 
-// Interface that the paint context should implement
+// Public API that the paint context should implement
 export interface PaintContextI {
+  // Splat a brush image into the rendering destination
   drawBrush(pt: Point2D, size: number, blur: number, color: FloatColor): void;
+
+  // Clear the buffer
   clear(color?: FloatColor): void;
 }
 
+export type DrawBrushFn = PaintContextI["drawBrush"];
+
+// WebGL implementation of PaintContextI
 export class PaintContextWebGL implements PaintContextI {
   gl: WebGLRenderingContext;
 
@@ -33,7 +39,13 @@ export class PaintContextWebGL implements PaintContextI {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     // Make a Quad
-    const vertexData = [-1, -1, 1, -1, -1, 1, 1, 1];
+    // prettier-ignore
+    const vertexData = [
+      -1,-1,
+       1,-1,
+      -1, 1,
+       1, 1,
+    ];
 
     const vertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
