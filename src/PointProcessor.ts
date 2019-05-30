@@ -1,8 +1,8 @@
-import { sub, length, evalBezier, Point2D } from "./point.js";
+import { sub, length, evalBezier, Point2D, Dot2D } from "./point.js";
 import { catmullRomToBezier } from "./math.js";
 import { FloatColor } from "./Color.js";
 import { Parameters } from "./Parameters.js";
-import { DrawBrushFn } from "./PaintContext.js";
+import { DrawBrushFn, DrawBrushArgs } from "./PaintContext.js";
 
 export interface TimedPoint {
   x: number;
@@ -22,71 +22,26 @@ function increaseRadiusWithSpeed(speed: number, size: number, minSize: number) {
   return minSize + (size - minSize) * (vr / (1.0 + vr));
 }
 
-// Returns nothing, but keep calling it with next(nextPoint) to pass more input
-export default function* PointProcessor(
-  {
-    brushSize,
-    stepSize,
-    movementMin: minDist,
-    blur,
-    color,
-    opacity,
-    debug = false
-  }: Parameters,
+// Apply a post-filter on points (only allow moving by at most _distance_)
+function* postFilter(
+  distance: number,
   drawBrush: DrawBrushFn
-): PointProcessorI {
-  const minSize = brushSize / 2;
-
-  const finalColor = [
-    color[0] * opacity,
-    color[1] * opacity,
-    color[2] * opacity,
-    color[3] * opacity
-  ];
-
-  // Taking a constant size for now
-  const addSize = (p: TimedPoint, r = minSize) => ({ ...p, r: minSize });
-
-  let p0 = addSize(yield, minSize);
-  let p1 = addSize(yield);
-  let p2 = addSize(yield);
-  let p3 = addSize(yield);
-
-  let speed = 0;
-  const vk = 0.5;
-
-  while (true) {
-    const newPt: TimedPoint & { r: number } = addSize(yield);
-
-    // TODO: handle new points in a smarter way, don't just reject
-    if (length(sub(p3, newPt)) > minDist) {
-      p0 = p1;
-      p1 = p2;
-      p2 = p3;
-      p3 = newPt;
-
-      const dt = p3.t - p2.t;
-
-      // V = average over last samples?
-
-      const speedUpdate = length(sub(p2, p1)) / dt;
-      speed = vk * speed + (1 - vk) * speedUpdate;
-
-      newPt.r = increaseRadiusWithSpeed(speed, brushSize, minSize);
-
-      const bez = catmullRomToBezier([p0, p1, p2, p3]);
-      // Estimate # of points in a very bad way
-      const ptCount = (length(sub(p0, p3)) / stepSize) * 1.5;
-      const pts = evalBezier(bez, ptCount);
-      pts.forEach(pt => {
-        drawBrush(pt, pt.r, blur, finalColor as FloatColor);
-      });
+): { next(value: DrawBrushArgs): void } {
+  let [pt, ...rest] = (yield) as DrawBrushArgs;
+  drawBrush(pt, ...rest);
+  do {
+    let [next, ...rest] = (yield) as DrawBrushArgs;
+    if (length(sub(pt, next)) > distance) {
+      drawBrush(pt, ...rest);
+      pt = next;
+    } else {
+      console.log("reject ", pt, next);
     }
-  }
+  } while (true);
 }
 
 // Returns nothing, but keep calling it with next(nextPoint) to pass more input
-export function* _pointProcessor(
+export default function* PointProcessor(
   {
     brushSize,
     stepSize,
@@ -108,20 +63,19 @@ export function* _pointProcessor(
     ? drawBrush
     : (pt: Point2D, size: number, blur: number, color: FloatColor) => {};
 
-  const finalColor = [
+  const finalColor: FloatColor = [
     color[0] * opacity,
     color[1] * opacity,
     color[2] * opacity,
     color[3] * opacity
   ];
+  const out = postFilter(stepSize, drawBrush);
   while (true) {
     const newPt = yield;
     // Reject point if step less than threshold
     if (length(sub(p3, newPt)) > movementMin) {
-      p0 = p1;
-      p1 = p2;
-      p2 = p3;
-      p3 = newPt;
+      // Shift in new point
+      [p0, p1, p2, p3] = [p1, p2, p3, newPt];
 
       const bez = catmullRomToBezier([p0, p1, p2, p3]);
       // Estimate # of points in a very bad way
@@ -131,7 +85,7 @@ export function* _pointProcessor(
       debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
 
       pts.forEach(pt => {
-        drawBrush(pt, brushSize, blur, finalColor as FloatColor);
+        out.next([pt, brushSize, blur, finalColor] as DrawBrushArgs);
       });
 
       // Debug vis

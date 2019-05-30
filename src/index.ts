@@ -91,8 +91,7 @@ class Controller {
   get parameters(): Parameters {
     return {
       brushSize: this.sizeSlider.valueAsNumber,
-      stepSize:
-        0.2 * this.sizeSlider.valueAsNumber * this.spacingSlider.valueAsNumber,
+      stepSize: this.spacingSlider.valueAsNumber,
       color: parseHex(this.colorPicker.value),
       opacity: this.opacitySlider.valueAsNumber,
       movementMin: this.movementMinSlider.valueAsNumber,

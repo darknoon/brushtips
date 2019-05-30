@@ -2,6 +2,8 @@ import { makeProgram } from "./glUtil.js";
 import { Point2D } from "./point.js";
 import { FloatColor, parseHex } from "./Color.js";
 
+export type DrawBrushArgs = [Point2D, number, number, FloatColor];
+
 // Public API that the paint context should implement
 export interface PaintContextI {
   // Splat a brush image into the rendering destination
