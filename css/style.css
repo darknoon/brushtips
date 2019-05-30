@@ -4,12 +4,26 @@ body {
     Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
+* {
+  box-sizing: border-box;
+}
+
 div#page {
   display: flex;
 }
 
+textarea {
+  font-family: "Menlo", Courier, monospace;
+  padding: 10px;
+  font-size: 11px;
+  color: #200775;
+  background: #efeff4;
+  border: none;
+}
+
 #stroke-data {
   width: 400px;
+  height: 400px;
 }
 
 #stroke-data textarea {
@@ -21,9 +35,6 @@ canvas#draw {
   background: white;
 }
 
-#controls {
-}
-
 .control-row {
   display: flex;
   flex-direction: horizontal;
@@ -31,15 +42,16 @@ canvas#draw {
 }
 
 .control-row > label {
-  width: 4em;
-  margin-top: 10px;
+  width: 5em;
+  font-weight: 600;
+  margin-top: 3px;
   margin-right: 8px;
   text-align: right;
 }
 .control-row > button {
   border: none;
   border-radius: 8px;
-  height: 30px;
+  height: 20px;
   font-size: inherit;
   /* color: black; */
   /* background-color: white; */
@@ -50,18 +62,18 @@ canvas#draw {
   background-color: white;
 }
 
-.paint-slider {
+.control-row > input[type="range"] {
   -webkit-appearance: none;
   background: white;
-  height: 30px;
+  height: 20px;
   border-radius: 8px;
 }
 
-.paint-slider::-webkit-slider-runnable-track {
+.control-row > input[type="range"]::-webkit-slider-runnable-track {
   margin: 7px;
 }
 
-.paint-slider::-webkit-slider-thumb {
+.control-row > input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   background: #333;
   border-radius: 1000px;
@@ -69,6 +81,20 @@ canvas#draw {
   height: 26px;
   margin: 2px 0;
   width: 6px;
+}
+
+.control-row > input[type="checkbox"] {
+  -webkit-appearance: none;
+  background: white;
+  border-radius: 2px;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0;
+}
+
+.control-row > input[type="checkbox"]:checked {
+  background: grey;
 }
 
 .control-row input:focus,

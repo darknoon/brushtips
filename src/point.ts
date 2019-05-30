@@ -1,23 +1,27 @@
-export type point2d = { x: number; y: number };
-export type point2dx4 = [point2d, point2d, point2d, point2d];
+// Type definitions to simplify code
+export type Point2D = { x: number; y: number };
+export type Point2Dx4 = [Point2D, Point2D, Point2D, Point2D];
 
-export const add = (pt1: point2d, pt2: point2d) => ({
+export const add = (pt1: Point2D, pt2: Point2D) => ({
   x: pt1.x + pt2.x,
   y: pt1.y + pt2.y
 });
-export const sub = (pt1: point2d, pt2: point2d) => ({
+export const sub = (pt1: Point2D, pt2: Point2D) => ({
   x: pt1.x - pt2.x,
   y: pt1.y - pt2.y
 });
-export const mulc = (pt: point2d, k: number) => ({ x: pt.x * k, y: pt.y * k });
-export const length = (pt: point2d) => Math.sqrt(pt.x * pt.x + pt.y * pt.y);
-export const lerp = (pt1: point2d, pt2: point2d, k: number) => ({
+
+export const mulc = (pt: Point2D, k: number) => ({ x: pt.x * k, y: pt.y * k });
+
+export const length = (pt: Point2D) => Math.sqrt(pt.x * pt.x + pt.y * pt.y);
+
+export const lerp = (pt1: Point2D, pt2: Point2D, k: number) => ({
   x: pt1.x + (pt2.x - pt1.x) * k,
   y: pt1.y + (pt2.y - pt1.y) * k
 });
 
 export function evalBezier(
-  [p0, p1, p2, p3]: [point2d, point2d, point2d, point2d],
+  [p0, p1, p2, p3]: [Point2D, Point2D, Point2D, Point2D],
   // TODO: adaptively subdivide instead!
   ptCount: number
 ) {

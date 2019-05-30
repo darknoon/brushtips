@@ -1,320 +1,162 @@
-import { length, sub, point2d, point2dx4, evalBezier } from "./point.js";
+import { PaintContextI, PaintContextWebGL } from "./PaintContext.js";
+import {
+  _pointProcessor as PointProcessor,
+  TimedPoint
+} from "./PointProcessor.js";
+import { Parameters } from "./Parameters.js";
+import { colorToHex, parseHex } from "./Color.js";
 
-import { makeProgram } from "./glUtil.js";
-
-interface BrushOutput {
-  drawBrush(x: number, y: number, size: number, color: ColorArray): void;
-}
-
-type Stroke = {
-  points: point2d[];
+const loadExample = async (example: string) => {
+  return await (await fetch(`../data/${example}.json`)).json();
 };
 
-class Controller implements BrushOutput {
-  sizeSlider: HTMLInputElement;
-  clearButton: HTMLButtonElement;
-  gl: WebGLRenderingContext;
+type Stroke = {
+  points: TimedPoint[];
+};
 
-  programUniforms: { [name: string]: WebGLUniformLocation };
+// Finds a dom element by id, errors if not found, type inference on expected parameter determines return type
+function find<T extends HTMLElement>(id: string, expected: { new (): T }): T {
+  const elem = document.getElementById(id);
+  if (!elem || !(elem instanceof expected)) {
+    throw new Error(`Element #${id} is ${elem}, not of type ${expected}`);
+  }
+  return elem as T;
+}
 
-  programAttribs: { [name: string]: GLint };
+class Controller {
+  // Find dom elements during construction
+  sizeSlider = find("size-slider", HTMLInputElement);
+  spacingSlider = find("spacing-slider", HTMLInputElement);
+  opacitySlider = find("opacity-slider", HTMLInputElement);
+  blurSlider = find("blur-slider", HTMLInputElement);
+  clearButton = find("clear", HTMLButtonElement);
+  movementMinSlider = find("movement-min-slider", HTMLInputElement);
+  colorPicker = find("color-picker", HTMLInputElement);
 
-  canvasSize: { width: number; height: number };
+  strokeDataOutput = find("stroke-data-output", HTMLTextAreaElement);
+
+  canvas = find("draw", HTMLCanvasElement);
+
+  output: PaintContextI;
 
   private currentStroke: Stroke | null = null;
 
-  initGL(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
-    if (!gl) {
-      throw Error("Could not create WebGL context.");
-    }
-    gl.disable(gl.CULL_FACE);
-    gl.disable(gl.DEPTH_TEST);
-    gl.enable(gl.BLEND);
-
-    // Reference https://webglfundamentals.org/webgl/lessons/webgl-and-alpha.html
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
-    // Make a Quad
-    const vertexData = [-1, -1, 1, -1, -1, 1, 1, 1];
-
-    const vertexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array(vertexData),
-      gl.STATIC_DRAW
-    );
-
-    return gl;
-  }
-
-  drawBrush(x: number, y: number, size: number, color: ColorArray) {
-    const { programUniforms, programAttribs, canvasSize } = this;
-    const gl = this.gl;
-    const pointGL = this.mouseToGL(x, y);
-    gl.uniform2f(programUniforms.brushPosition, pointGL.x, pointGL.y);
-    gl.uniform1f(programUniforms.brushSize, size / canvasSize.width);
-    gl.uniform1f(programUniforms.brushSharpness, (size - 4) / size);
-    gl.uniform4fv(programUniforms.brushColor, color);
-
-    gl.vertexAttribPointer(programAttribs.coord, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(programAttribs.coord);
-
-    // Draw tri strip
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }
-
   constructor() {
-    const clearButton = document.getElementById("clear") as HTMLButtonElement;
-    if (!clearButton) {
-      throw new Error("Can't find clear button.");
-    }
-    clearButton.onclick = this.clearContext;
-    this.clearButton = clearButton;
+    this.clearButton.onclick = this.clearOutput;
 
-    const canvas = document.getElementById("draw");
-    if (!(canvas instanceof HTMLCanvasElement)) {
-      throw new Error("Missing document canvas.");
-    }
-    this.sizeSlider = <HTMLInputElement>document.getElementById("sizeSlider");
+    // When any of our sliders change, redraw
+    this.sizeSlider.oninput = this.handleParameterChange;
+    this.movementMinSlider.oninput = this.handleParameterChange;
+    this.spacingSlider.oninput = this.handleParameterChange;
+    this.opacitySlider.oninput = this.handleParameterChange;
+    this.blurSlider.oninput = this.handleParameterChange;
+    this.colorPicker.oninput = this.handleParameterChange;
 
-    if (!this.sizeSlider || !(this.sizeSlider instanceof HTMLInputElement)) {
-      throw Error("DOM not as expected");
-    }
+    this.restoreState();
 
     const devicePixelRatio = window.devicePixelRatio || 1;
 
+    const canvas = this.canvas;
     // set the size of the drawingBuffer based on the size it's displayed.
     canvas.width = canvas.clientWidth * devicePixelRatio;
     canvas.height = canvas.clientHeight * devicePixelRatio;
-    this.canvasSize = {
-      width: canvas.clientWidth,
-      height: canvas.clientHeight
-    };
     canvas.onmousedown = this.handleMouseDown;
-    const gl = this.initGL(canvas);
-    this.gl = gl;
 
-    const program = makeProgram(gl, "vertex-shader", "fragment-shader");
+    this.output = new PaintContextWebGL(canvas);
 
-    // Setup program uniforms and attributes
-    const programUniforms = {
-      brushPosition: gl.getUniformLocation(program, "brushPosition"),
-      brushSize: gl.getUniformLocation(program, "brushSize"),
-      brushColor: gl.getUniformLocation(program, "brushColor"),
-      brushSharpness: gl.getUniformLocation(program, "brushSharpness")
-    };
-    for (const [key, uniformLocation] of Object.entries(programUniforms)) {
-      if (!uniformLocation) {
-        throw new Error(`Could not find uniform for key: ${key}`);
-      }
-    }
-    this.programUniforms = programUniforms as {
-      [name: string]: WebGLUniformLocation;
-    };
-    const programAttribs = {
-      coord: gl.getAttribLocation(program, "coord")
-    };
-    for (const [key, attribLocation] of Object.entries(programAttribs)) {
-      if (attribLocation === -1) {
-        throw new Error(`Could not find attribute: ${key}`);
-      }
-    }
-    this.programAttribs = programAttribs as {
-      [name: string]: GLint;
-    };
-
-    this.clearContext();
+    loadExample("face").then(s => {
+      this.currentStroke = s;
+      this.showStroke(s);
+      this.drawStroke(s, this.parameters);
+    });
   }
 
-  // Used as event handler
-  clearContext = () => {
-    const { gl } = this;
-    gl.clearColor(1, 1, 1, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+  restoreState() {
+    const state = sessionStorage.getItem("brushParameters");
+    if (!state) return;
+    const savedState = JSON.parse(state);
+    this.parameters = savedState;
+  }
 
-    const basicStroke = {
-      points: [
-        { x: 10, y: 10, t: 0 },
-        { x: 10, y: 200, t: 100 },
-        { x: 400 - 10, y: 200, t: 200 },
-        { x: 400 - 10, y: 10, t: 400 }
-      ]
-    };
-
-    this.drawStroke(basicStroke);
+  clearOutput = () => {
+    this.output.clear();
   };
 
-  drawStroke(stroke: Stroke) {
-    const pp = _pointProcessor(
-      this.getBrushSize(),
-      this.getStepSize(),
-      this.drawBrush.bind(this)
-    );
+  drawStroke(stroke: Stroke, p: Parameters) {
+    const pp = PointProcessor(p, this.output.drawBrush.bind(this.output));
     stroke.points.forEach(p => pp.next(p));
   }
 
-  mouseToGL(x: number, y: number) {
-    const {
-      canvasSize: { width, height }
-    } = this;
+  showStroke(stroke: Stroke) {
+    this.strokeDataOutput.textContent = JSON.stringify(stroke);
+  }
+
+  get parameters(): Parameters {
     return {
-      x: (x / width) * 2 - 1,
-      y: (1 - y / height) * 2 - 1
+      brushSize: this.sizeSlider.valueAsNumber,
+      stepSize:
+        0.2 * this.sizeSlider.valueAsNumber * this.spacingSlider.valueAsNumber,
+      color: parseHex(this.colorPicker.value),
+      opacity: this.opacitySlider.valueAsNumber,
+      movementMin: this.movementMinSlider.valueAsNumber,
+      blur: this.blurSlider.valueAsNumber
     };
   }
 
+  set parameters(p: Parameters) {
+    this.sizeSlider.valueAsNumber = p.brushSize;
+    this.spacingSlider.valueAsNumber = p.stepSize;
+    this.opacitySlider.valueAsNumber = p.opacity;
+    this.movementMinSlider.valueAsNumber = p.movementMin;
+    this.blurSlider.valueAsNumber = p.blur;
+    this.colorPicker.value = colorToHex(p.color);
+  }
+
+  handleParameterChange = (e: Event) => {
+    this.clearOutput();
+    sessionStorage.setItem("brushParameters", JSON.stringify(this.parameters));
+    if (this.currentStroke) {
+      this.drawStroke(this.currentStroke, this.parameters);
+    }
+  };
+
   handleMouseDown = (e: MouseEvent) => {
-    console.log("has coalesced:", "getCoalescedEvents" in e);
-
-    const options = {};
-
     const stroke: Stroke = { points: [] };
 
     // Create a point processor for this stroke
-    const pointProcessor = _pointProcessor(
-      this.getBrushSize(),
-      this.getStepSize(),
-      this.drawBrush.bind(this)
+    const pointProcessor = PointProcessor(
+      this.parameters,
+      this.output.drawBrush.bind(this.output)
     );
 
+    const startTime = e.timeStamp;
+
     const processEvent = (e: MouseEvent) => {
-      // Coalesced events is poorly supported, but works better for high input rate
-      // const events =
-      //   "getCoalescedEvents" in event ? event.getCoalescedEvents() : [event];
-      const pt = { x: e.pageX, y: e.pageY, t: e.timeStamp };
+      const pt = {
+        x: e.pageX,
+        y: e.pageY,
+        t: Math.floor(e.timeStamp - startTime)
+      };
       pointProcessor.next(pt);
       stroke.points.push(pt);
     };
 
     // On mouse movement, process the event
-    document.addEventListener("mousemove", processEvent, options);
+    document.addEventListener("mousemove", processEvent);
 
     // Remove event listeners on mouseup
     const done = (e: MouseEvent) => {
       processEvent(e);
-      document.removeEventListener("mousemove", processEvent, options);
-      document.removeEventListener("mouseup", done, options);
+      document.removeEventListener("mousemove", processEvent);
+      document.removeEventListener("mouseup", done);
       this.currentStroke = stroke;
-      this.drawStroke(stroke);
+      this.showStroke(stroke);
     };
-    document.addEventListener("mouseup", done, options);
+    document.addEventListener("mouseup", done);
 
-    pointProcessor.next();
+    // pointProcessor.next();
     processEvent(e);
   };
-
-  getBrushSize = () => this.sizeSlider.valueAsNumber;
-  getStepSize = () => 0.2 * this.getBrushSize();
-}
-
-// Returns a function that generates points to render, then returns null
-
-type ColorArray = [number, number, number, number];
-
-// UTILS
-const clamp = (t: number) => Math.max(0, Math.min(t, 1));
-const smoothstep = (edge0: number, edge1: number, x: number) => {
-  const t = clamp((x - edge0) / (edge1 - edge0));
-  return t * t * (3.0 - 2.0 * t);
-};
-
-function catmullRomToBezier([p0, p1, p2, p3]: point2dx4): point2dx4 {
-  const i6 = 1.0 / 6.0;
-
-  return [
-    p1,
-    {
-      x: p2.x * i6 + p1.x - p0.x * i6,
-      y: p2.y * i6 + p1.y - p0.y * i6
-    },
-    {
-      x: p3.x * -i6 + p2.x + p1.x * i6,
-      y: p3.y * -i6 + p2.y + p1.y * i6
-    },
-    p2
-  ];
-}
-
-const debugPoint = (
-  x: number,
-  y: number,
-  size: number,
-  color: ColorArray
-) => {};
-// const debugPoint = drawBrush;
-
-// Returns nothing, but keep calling it with next(nextPoint) to pass more input
-function* _pointProcessor(
-  brushSize: number,
-  stepSize: number,
-  drawBrush: (x: number, y: number, size: number, color: ColorArray) => void
-) {
-  // Accept 4 input points before starting interpolation and drawing
-  let p0 = yield;
-  let p1 = yield;
-  let p2 = yield;
-  let p3 = yield;
-
-  let currentV = { x: 0, y: 0 };
-  const vk = 0.9;
-
-  while (true) {
-    const newPt = yield;
-    // Reject point if step less than stepSize
-    if (length(sub(p3, newPt)) > stepSize) {
-      p0 = p1;
-      p1 = p2;
-      p2 = p3;
-      p3 = newPt;
-
-      const dt = p3.t - p2.t;
-      // console.log("dt", dt);
-
-      const bez = catmullRomToBezier([p0, p1, p2, p3]);
-      // Estimate # of points in a very bad way
-      const ptCount = (length(sub(p0, p3)) / stepSize) * 1.5;
-      const pts = evalBezier(bez, ptCount);
-
-      debugPoint(bez[0].x, bez[0].y, 4, [0, 0, 1, 1]);
-
-      pts.forEach(pt => {
-        drawBrush(pt.x, pt.y, brushSize, [0, 0, 0, 0.1]);
-      });
-
-      // Debug vis
-      debugPoint(bez[0].x, bez[0].y, 4, [0, 0, 1, 1]);
-      debugPoint(bez[1].x, bez[1].y, 4, [1, 0, 0, 1]);
-      debugPoint(bez[2].x, bez[2].y, 4, [0, 1, 0, 1]);
-    }
-
-    // Move slightly in direction of target
-    // if (0) {
-    //   const dist = length(sub(current, target));
-
-    //   if (dist < stepSize) {
-    //     target = yield;
-    //     prev = current;
-    //   } else {
-    //     const speed = length(currentV);
-    //     const currentBrushSize =
-    //       brushSize * (1.0 - 0.5 * smoothstep(0, 1, 0.3 * speed));
-    //     drawBrush(current.x, current.y, currentBrushSize, [0, 0, 0, 1]);
-    //     const dt = (target.t - prev.t) / dist;
-    //     //console.log(`currentV ${currentV.x.toFixed(2)} ${currentV.y.toFixed(2)}`);
-    //     current = {
-    //       x: current.x + ((target.x - current.x) / dist) * stepSize,
-    //       y: current.y + ((target.y - current.y) / dist) * stepSize,
-    //       t: current.t + dt
-    //     };
-    //     currentV = add(
-    //       mulc(currentV, vk),
-    //       mulc(sub(target, current), (1 / dist) * stepSize * (1 - vk))
-    //     );
-    //   }
-    // }
-  }
 }
 
 const controller = new Controller();
