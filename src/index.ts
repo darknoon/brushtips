@@ -1,6 +1,6 @@
 import { PaintContextI, PaintContextWebGL } from "./PaintContext.js";
 import PointProcessor, { TimedPoint } from "./PointProcessor.js";
-import { Parameters } from "./Parameters.js";
+import { Parameters, Parameter, parameterDefinitions } from "./Parameters.js";
 import { colorToHex, parseHex } from "./Color.js";
 
 const loadExample = async (example: string) => {
@@ -20,15 +20,82 @@ function find<T extends HTMLElement>(id: string, expected: { new (): T }): T {
   return elem as T;
 }
 
+// Fusion of https://basarat.gitbooks.io/typescript/docs/template-strings.html and ObservableHQ's html
+function html(templates: TemplateStringsArray, ...placeholders: string[]) {
+  let result = "";
+  // Simple version w/o escaping because
+  // - there is no arbitrary input
+  // - we want to let you add children via templates
+  // A proper templating implementation is beyond the scope of this project.
+  // See https://github.com/observablehq/stdlib/blob/master/src/template.js
+  for (let i = 0; i < placeholders.length; i++) {
+    result += templates[i];
+    result += String(placeholders[i]);
+  }
+  result += templates[templates.length - 1];
+}
+
+// Polyfill Object.fromEntries for type safety reasons
+function fromEntries<K extends string, V>(pairs: [K, V][]): { [P in K]: V } {
+  const o: any = {};
+  for (let [k, v] of pairs) {
+    o[k] = v;
+  }
+  return o;
+}
+
+type ControlsMap = { [P in keyof Parameters]: HTMLInputElement };
+
 class Controller {
-  // Find dom elements during construction
-  sizeSlider = find("size-slider", HTMLInputElement);
-  spacingSlider = find("spacing-slider", HTMLInputElement);
-  opacitySlider = find("opacity-slider", HTMLInputElement);
-  blurSlider = find("blur-slider", HTMLInputElement);
+  controls = find("controls", HTMLDivElement);
+
+  controlsMap: ControlsMap;
+
+  createControls(): ControlsMap {
+    const label = (p: Parameter) => `<label for=${p.key}>${p.label}</label>`;
+    const makeControl = (p: Parameter) => {
+      switch (p.type) {
+        case "checkbox":
+          return `<input type="checkbox" id="${p.key}"  />`;
+        case "color":
+          return `<input type="color" id="${p.key}" value="black" />`;
+        case "range":
+          return `
+            <input type="range" 
+              id="${p.key}"
+              min="${p.min}"
+              max="${p.max}"
+              step="${p.step || 0.01}"
+             />`;
+      }
+    };
+    const row = (p: Parameter) => `
+    <div class="control-row">
+      ${label(p)}
+      ${makeControl(p)}
+    </div>
+    `;
+    // Create a div and fill it with out controls
+    const doubled = document.createElement("div");
+    const htmlString = parameterDefinitions.map(row).join("\n");
+    doubled.innerHTML = htmlString;
+    // Now, find controls we just created in the dom
+    // In a normal project, we would use refs in React or would be able to
+    // use DOM children in templating like ObservableHQ's html`` template literal
+    this.controls.appendChild(doubled);
+
+    return fromEntries(
+      parameterDefinitions.map(({ key }) => {
+        const domElement = find(key, HTMLInputElement);
+        console.log("f key", key);
+        domElement.oninput = this.handleParameterChange;
+        // HACK: we need to assign to partial map due to lack of fromEntries
+        return [key, domElement];
+      })
+    ) as ControlsMap;
+  }
+
   clearButton = find("clear", HTMLButtonElement);
-  movementMinSlider = find("movement-min-slider", HTMLInputElement);
-  colorPicker = find("color-picker", HTMLInputElement);
 
   strokeDataOutput = find("stroke-data-output", HTMLTextAreaElement);
 
@@ -39,15 +106,16 @@ class Controller {
   private currentStroke: Stroke | null = null;
 
   constructor() {
+    this.controlsMap = this.createControls();
     this.clearButton.onclick = this.clearOutput;
 
-    // When any of our sliders change, redraw
-    this.sizeSlider.oninput = this.handleParameterChange;
-    this.movementMinSlider.oninput = this.handleParameterChange;
-    this.spacingSlider.oninput = this.handleParameterChange;
-    this.opacitySlider.oninput = this.handleParameterChange;
-    this.blurSlider.oninput = this.handleParameterChange;
-    this.colorPicker.oninput = this.handleParameterChange;
+    // controlsMap.When our sliders change, redraw
+    // this.controlsMap.size.oninput = this.handleParameterChange;
+    // this.controlsMap.movementMin.oninput = this.handleParameterChange;
+    // this.controlsMap.spacing.oninput = this.handleParameterChange;
+    // this.controlsMap.opacity.oninput = this.handleParameterChange;
+    // this.controlsMap.sharpness.oninput = this.handleParameterChange;
+    // this.colorPicker.oninput = this.handleParameterChange;
 
     this.restoreState();
 
@@ -89,23 +157,46 @@ class Controller {
   }
 
   get parameters(): Parameters {
+    // parameterDefinitions.map(p => {
+    //   if (p.type === "color") {
+    //     return parseHex(this.controlsMap[key].value);
+    //   } else {
+    //     return this.controlsMap[key].valueAsNumber;
+    //   }
+    // });
+
     return {
-      brushSize: this.sizeSlider.valueAsNumber,
-      stepSize: this.spacingSlider.valueAsNumber,
-      color: parseHex(this.colorPicker.value),
-      opacity: this.opacitySlider.valueAsNumber,
-      movementMin: this.movementMinSlider.valueAsNumber,
-      blur: this.blurSlider.valueAsNumber
+      brushSize: this.controlsMap.brushSize.valueAsNumber,
+      stepSize: this.controlsMap.stepSize.valueAsNumber,
+      color: parseHex(this.controlsMap.color.value),
+      opacity: this.controlsMap.opacity.valueAsNumber,
+      movementMin: this.controlsMap.movementMin.valueAsNumber,
+      sharpness: this.controlsMap.sharpness.valueAsNumber
     };
+
+    // fromEntries(
+    //   Object.entries(this.controlsMap).map(([key, input]) => [
+    //     key,
+    //     input.valueAsNumber
+    //   ])
+    // );
+    // return {
+    //   brushSize: this.controlsMap.size.valueAsNumber,
+    //   stepSize: this.controlsMap.spacing.valueAsNumber,
+    //   color: parseHex(this.colorPicker.value),
+    //   opacity: this.controlsMap.opacity.valueAsNumber,
+    //   movementMin: this.controlsMap.movementMin.valueAsNumber,
+    //   sharpness: this.controlsMap.sharpness.valueAsNumber
+    // };
   }
 
   set parameters(p: Parameters) {
-    this.sizeSlider.valueAsNumber = p.brushSize;
-    this.spacingSlider.valueAsNumber = p.stepSize;
-    this.opacitySlider.valueAsNumber = p.opacity;
-    this.movementMinSlider.valueAsNumber = p.movementMin;
-    this.blurSlider.valueAsNumber = p.blur;
-    this.colorPicker.value = colorToHex(p.color);
+    this.controlsMap.brushSize.valueAsNumber = p.brushSize;
+    this.controlsMap.stepSize.valueAsNumber = p.stepSize;
+    this.controlsMap.opacity.valueAsNumber = p.opacity;
+    this.controlsMap.movementMin.valueAsNumber = p.movementMin;
+    this.controlsMap.sharpness.valueAsNumber = p.sharpness;
+    this.controlsMap.color.value = colorToHex(p.color);
   }
 
   handleParameterChange = (e: Event) => {
@@ -150,7 +241,9 @@ class Controller {
 
     // Remove event listeners on mouseup
     const done = (e: MouseEvent) => {
+      // Feed last event in
       processEvent(e);
+
       document.removeEventListener("mousemove", processEvent);
       document.removeEventListener("mouseup", done);
       this.currentStroke = stroke;

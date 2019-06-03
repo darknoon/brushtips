@@ -6,15 +6,15 @@
  */
 export function makeProgram(
   gl: WebGLRenderingContext,
-  vertexProgramId: string,
-  fragmentProgramId: string
+  vertexProgram: string,
+  fragmentProgram: string
 ) {
   const shaderProgram = gl.createProgram();
   if (!shaderProgram) {
     throw Error("Error creating shader program");
   }
-  gl.attachShader(shaderProgram, makeShader(gl, vertexProgramId));
-  gl.attachShader(shaderProgram, makeShader(gl, fragmentProgramId));
+  gl.attachShader(shaderProgram, makeShader(gl, vertexProgram, "vertex"));
+  gl.attachShader(shaderProgram, makeShader(gl, fragmentProgram, "fragment"));
   gl.linkProgram(shaderProgram);
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -24,19 +24,15 @@ export function makeProgram(
   return shaderProgram;
 }
 
-export function makeShader(gl: WebGLRenderingContext, id: string): WebGLShader {
-  const shaderScript = document.getElementById(id) as HTMLScriptElement;
-  if (!shaderScript) {
-    throw Error(`Couldn't find shader in document with id ${id}`);
-  }
-  const text = shaderScript.innerText;
-  const type = shaderScript.type;
-
-  const glType =
-    type === "x-shader/x-fragment" ? gl.FRAGMENT_SHADER : gl.VERTEX_SHADER;
+export function makeShader(
+  gl: WebGLRenderingContext,
+  text: string,
+  type: "fragment" | "vertex"
+): WebGLShader {
+  const glType = type === "fragment" ? gl.FRAGMENT_SHADER : gl.VERTEX_SHADER;
   const shader = gl.createShader(glType);
   if (!shader) {
-    throw Error("WebGL not working");
+    throw Error("createShader failed");
   }
 
   gl.shaderSource(shader, text);

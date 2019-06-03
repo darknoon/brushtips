@@ -19,8 +19,6 @@ export const sub = (pt1: Point2D, pt2: Point2D) => ({
   y: pt1.y - pt2.y
 });
 
-export const mulc = (pt: Point2D, k: number) => ({ x: pt.x * k, y: pt.y * k });
-
 export const length = (pt: Point2D) => Math.sqrt(pt.x * pt.x + pt.y * pt.y);
 
 export const lerp = (pt1: Dot2D, pt2: Dot2D, k: number) => ({

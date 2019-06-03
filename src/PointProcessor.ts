@@ -12,32 +12,20 @@ export interface TimedPoint {
 }
 
 // This interface ensures you have to pass a TimedPoint to a point processor
-// (typescript support is weak for generator functions)
+// typescript's generator support doesn't type the parameter of the next function
 interface PointProcessorI {
   next(value: TimedPoint): void;
 }
 
-function increaseRadiusWithSpeed(speed: number, size: number, minSize: number) {
-  const vr = speed * 2;
-  return minSize + (size - minSize) * (vr / (1.0 + vr));
-}
-
-// Apply a post-filter on points (only allow moving by at most _distance_)
-function* postFilter(
-  distance: number,
-  drawBrush: DrawBrushFn
-): { next(value: DrawBrushArgs): void } {
-  let [pt, ...rest] = (yield) as DrawBrushArgs;
-  drawBrush(pt, ...rest);
-  do {
-    let [next, ...rest] = (yield) as DrawBrushArgs;
-    if (length(sub(pt, next)) > distance) {
-      drawBrush(pt, ...rest);
-      pt = next;
-    } else {
-      console.log("reject ", pt, next);
+// Filter points that are close together (must move at least _distance_)
+function distanceFilter(distance: number, drawBrush: DrawBrushFn): DrawBrushFn {
+  let currentPoint: Point2D | null = null;
+  return (next, ...rest) => {
+    if (!currentPoint || length(sub(currentPoint, next)) > distance) {
+      drawBrush(next, ...rest);
+      currentPoint = next;
     }
-  } while (true);
+  };
 }
 
 // Returns nothing, but keep calling it with next(nextPoint) to pass more input
@@ -46,30 +34,29 @@ export default function* PointProcessor(
     brushSize,
     stepSize,
     movementMin,
-    blur,
+    sharpness,
     color,
     opacity,
     debug = false
   }: Parameters,
-  drawBrush: DrawBrushFn
+  _drawBrush: DrawBrushFn
 ): PointProcessorI {
+  // Output points if we're in debug mode only
+  const debugPoint = debug ? _drawBrush : () => {};
+
+  // Only draw if we've moved at least stepSize
+  const drawBrush = distanceFilter(stepSize * brushSize, _drawBrush);
+
+  // Multiply opacity into color value
+  const finalColor = color.map(c => c * opacity) as FloatColor;
+
   // Accept 4 input points before starting interpolation and drawing
   let p0 = yield;
   let p1 = yield;
   let p2 = yield;
   let p3 = yield;
 
-  const debugPoint = debug
-    ? drawBrush
-    : (pt: Point2D, size: number, blur: number, color: FloatColor) => {};
-
-  const finalColor: FloatColor = [
-    color[0] * opacity,
-    color[1] * opacity,
-    color[2] * opacity,
-    color[3] * opacity
-  ];
-  const out = postFilter(stepSize, drawBrush);
+  // Keep accepting points until we're done
   while (true) {
     const newPt = yield;
     // Reject point if step less than threshold
@@ -78,14 +65,16 @@ export default function* PointProcessor(
       [p0, p1, p2, p3] = [p1, p2, p3, newPt];
 
       const bez = catmullRomToBezier([p0, p1, p2, p3]);
-      // Estimate # of points in a very bad way
-      const ptCount = (length(sub(p0, p3)) / stepSize) * 1.5;
+
+      // Estimate # of points in a very bad way.
+      // Since we use a filter that applies on output, it's OK to over-estimate
+      const ptCount = (length(sub(p0, p3)) / stepSize) * 2.0;
       const pts = evalBezier(bez, ptCount);
 
       debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
 
       pts.forEach(pt => {
-        out.next([pt, brushSize, blur, finalColor] as DrawBrushArgs);
+        drawBrush(pt, brushSize, sharpness, finalColor);
       });
 
       // Debug vis

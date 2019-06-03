@@ -1,6 +1,7 @@
 import { makeProgram } from "./glUtil.js";
 import { Point2D } from "./point.js";
 import { FloatColor, parseHex } from "./Color.js";
+import { fragmentShader, vertexShader } from "./shaders.js";
 
 export type DrawBrushArgs = [Point2D, number, number, FloatColor];
 
@@ -70,14 +71,14 @@ export class PaintContextWebGL implements PaintContextI {
     };
   }
 
-  drawBrush(pt: Point2D, size: number, blur: number, color: FloatColor) {
+  drawBrush(pt: Point2D, size: number, sharpness: number, color: FloatColor) {
     const { programUniforms, programAttribs, canvasSize } = this;
     const gl = this.gl;
     const pointGL = this.mouseToGL(pt.x, pt.y);
     const r = canvasSize.width;
     gl.uniform2f(programUniforms.brushPosition, pointGL.x, pointGL.y);
     gl.uniform1f(programUniforms.brushSize, size / canvasSize.width);
-    gl.uniform1f(programUniforms.brushSharpness, (r * (blur / 100) - 1.5) / r);
+    gl.uniform1f(programUniforms.brushSharpness, (r * sharpness - 1.5) / r);
     gl.uniform4fv(programUniforms.brushColor, color);
 
     gl.vertexAttribPointer(programAttribs.coord, 2, gl.FLOAT, false, 0, 0);
@@ -103,7 +104,7 @@ export class PaintContextWebGL implements PaintContextI {
 
     this.clear();
 
-    const program = makeProgram(gl, "vertex-shader", "fragment-shader");
+    const program = makeProgram(gl, vertexShader, fragmentShader);
 
     gl.useProgram(program);
 
