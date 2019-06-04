@@ -1,7 +1,13 @@
 import { PaintContextI, PaintContextWebGL } from "./PaintContext.js";
 import PointProcessor, { TimedPoint } from "./PointProcessor.js";
-import { Parameters, Parameter, parameterDefinitions } from "./Parameters.js";
-import { colorToHex, parseHex } from "./Color.js";
+import {
+  Parameters,
+  sanitize,
+  Parameter,
+  parameterDefinitions
+} from "./Parameters.js";
+import { colorToHex, parseHex, FloatColor } from "./Color.js";
+import fromEntries from "./fromEntries.js";
 
 const loadExample = async (example: string) => {
   return await (await fetch(`../data/${example}.json`)).json();
@@ -35,15 +41,6 @@ function html(templates: TemplateStringsArray, ...placeholders: string[]) {
   result += templates[templates.length - 1];
 }
 
-// Polyfill Object.fromEntries for type safety reasons
-function fromEntries<K extends string, V>(pairs: [K, V][]): { [P in K]: V } {
-  const o: any = {};
-  for (let [k, v] of pairs) {
-    o[k] = v;
-  }
-  return o;
-}
-
 type ControlsMap = { [P in keyof Parameters]: HTMLInputElement };
 
 class Controller {
@@ -53,19 +50,19 @@ class Controller {
 
   createControls(): ControlsMap {
     const label = (p: Parameter) => `<label for=${p.key}>${p.label}</label>`;
-    const makeControl = (p: Parameter) => {
-      switch (p.type) {
+    const makeControl = (d: Parameter) => {
+      switch (d.type) {
         case "checkbox":
-          return `<input type="checkbox" id="${p.key}"  />`;
+          return `<input type="checkbox" id="${d.key}"  />`;
         case "color":
-          return `<input type="color" id="${p.key}" value="black" />`;
+          return `<input type="color" id="${d.key}" />`;
         case "range":
           return `
             <input type="range" 
-              id="${p.key}"
-              min="${p.min}"
-              max="${p.max}"
-              step="${p.step || 0.01}"
+              id="${d.key}"
+              min="${d.min}"
+              max="${d.max}"
+              step="${d.step || 0.01}"
              />`;
       }
     };
@@ -87,12 +84,10 @@ class Controller {
     return fromEntries(
       parameterDefinitions.map(({ key }) => {
         const domElement = find(key, HTMLInputElement);
-        console.log("f key", key);
         domElement.oninput = this.handleParameterChange;
-        // HACK: we need to assign to partial map due to lack of fromEntries
         return [key, domElement];
       })
-    ) as ControlsMap;
+    );
   }
 
   clearButton = find("clear", HTMLButtonElement);
@@ -109,26 +104,19 @@ class Controller {
     this.controlsMap = this.createControls();
     this.clearButton.onclick = this.clearOutput;
 
-    // controlsMap.When our sliders change, redraw
-    // this.controlsMap.size.oninput = this.handleParameterChange;
-    // this.controlsMap.movementMin.oninput = this.handleParameterChange;
-    // this.controlsMap.spacing.oninput = this.handleParameterChange;
-    // this.controlsMap.opacity.oninput = this.handleParameterChange;
-    // this.controlsMap.sharpness.oninput = this.handleParameterChange;
-    // this.colorPicker.oninput = this.handleParameterChange;
-
     this.restoreState();
 
     const devicePixelRatio = window.devicePixelRatio || 1;
 
     const canvas = this.canvas;
-    // set the size of the drawingBuffer based on the size it's displayed.
+    // set the size of the drawing buffer based on the size it's displayed.
     canvas.width = canvas.clientWidth * devicePixelRatio;
     canvas.height = canvas.clientHeight * devicePixelRatio;
     canvas.onmousedown = this.handleMouseDown;
 
     this.output = new PaintContextWebGL(canvas);
 
+    // Start with a stroke on the canvas for funzies
     loadExample("spiral").then(s => {
       this.currentStroke = s;
       this.showStroke(s);
@@ -138,9 +126,11 @@ class Controller {
 
   restoreState() {
     const state = sessionStorage.getItem("brushParameters");
-    if (!state) return;
-    const savedState = JSON.parse(state);
-    this.parameters = savedState;
+    if (state === null) return;
+    // type Partial = { [P in keyof Parameters]?: any };
+    const untrusted = JSON.parse(state);
+
+    this.parameters = sanitize(untrusted);
   }
 
   clearOutput = () => {
@@ -156,50 +146,51 @@ class Controller {
     this.strokeDataOutput.textContent = JSON.stringify(stroke);
   }
 
+  // Look at our controls' states and turn that back into a Parameters object
   get parameters(): Parameters {
-    // parameterDefinitions.map(p => {
-    //   if (p.type === "color") {
-    //     return parseHex(this.controlsMap[key].value);
-    //   } else {
-    //     return this.controlsMap[key].valueAsNumber;
-    //   }
-    // });
-
-    return {
-      brushSize: this.controlsMap.brushSize.valueAsNumber,
-      stepSize: this.controlsMap.stepSize.valueAsNumber,
-      color: parseHex(this.controlsMap.color.value),
-      opacity: this.controlsMap.opacity.valueAsNumber,
-      movementMin: this.controlsMap.movementMin.valueAsNumber,
-      sharpness: this.controlsMap.sharpness.valueAsNumber
-    };
-
-    // fromEntries(
-    //   Object.entries(this.controlsMap).map(([key, input]) => [
-    //     key,
-    //     input.valueAsNumber
-    //   ])
-    // );
-    // return {
-    //   brushSize: this.controlsMap.size.valueAsNumber,
-    //   stepSize: this.controlsMap.spacing.valueAsNumber,
-    //   color: parseHex(this.colorPicker.value),
-    //   opacity: this.controlsMap.opacity.valueAsNumber,
-    //   movementMin: this.controlsMap.movementMin.valueAsNumber,
-    //   sharpness: this.controlsMap.sharpness.valueAsNumber
-    // };
+    return fromEntries(
+      parameterDefinitions.map(d => {
+        const { key, type } = d;
+        // c can be undefined if the control wasn't in the map
+        // TODO: find a way to type ControlsMap to have exactly the keys of parameters
+        let c = this.controlsMap[key];
+        if (type === "color") {
+          const v = c ? parseHex(c.value) : d.defaultValue;
+          return [key, v];
+        } else if (type === "checkbox") {
+          const v = c ? c.checked : d.defaultValue;
+          return [key, v];
+        } else {
+          const v = c ? c.valueAsNumber : d.defaultValue;
+          return [key, v];
+        }
+      })
+    );
   }
 
   set parameters(p: Parameters) {
-    this.controlsMap.brushSize.valueAsNumber = p.brushSize;
-    this.controlsMap.stepSize.valueAsNumber = p.stepSize;
-    this.controlsMap.opacity.valueAsNumber = p.opacity;
-    this.controlsMap.movementMin.valueAsNumber = p.movementMin;
-    this.controlsMap.sharpness.valueAsNumber = p.sharpness;
-    this.controlsMap.color.value = colorToHex(p.color);
+    parameterDefinitions.forEach(d => {
+      const { key, type } = d;
+      // Get the correct control
+      const c = this.controlsMap[d.key];
+      if (!c) return;
+      // Set its value correctly based on type
+      if (type === "color") {
+        // HACK: typescript doesn't know that all parameters of type color have FloatColor values
+        const v = p[key] as FloatColor;
+        c.value = colorToHex(v);
+      } else if (type === "checkbox") {
+        const v = p[key] as boolean;
+        c.checked = v;
+      } else {
+        // HACK: typescript doesn't know that all parameters of other types have number
+        const v = p[key] as number;
+        c.valueAsNumber = v;
+      }
+    });
   }
 
-  handleParameterChange = (e: Event) => {
+  private handleParameterChange = (e: Event) => {
     this.clearOutput();
     sessionStorage.setItem("brushParameters", JSON.stringify(this.parameters));
     if (this.currentStroke) {
@@ -207,7 +198,11 @@ class Controller {
     }
   };
 
-  handleMouseDown = (e: MouseEvent) => {
+  /*
+   This construct lets us process a mouse gesture from start to finish.
+   If we added a mousemove listener to our element, we would miss out on events when the mouse draws off the edge of the canvas.
+   */
+  private handleMouseDown = (e: MouseEvent) => {
     const stroke: Stroke = { points: [] };
 
     // Create a point processor for this stroke
@@ -218,30 +213,33 @@ class Controller {
 
     const startTime = e.timeStamp;
 
-    const getRelativePosition = (e: MouseEvent) => {
+    // Define inline to capture any gesture-specific state we need
+    const getRelativePosition = (e: MouseEvent): TimedPoint => {
       const { pageX, pageY, timeStamp: t } = e;
       const { left, top } = this.canvas.getBoundingClientRect();
+      // In practice, this can't be null
+      const scroll = document.scrollingElement!;
+      const { scrollTop, scrollLeft } = scroll;
       return {
         // Account for offset of element on page relative to mouse position
-        x: pageX - left,
-        y: pageY - top,
+        x: pageX - left - scrollLeft,
+        y: pageY - top - scrollTop,
         // Round to the nearest millisecond to keep JSON clean
         t: Math.floor(t - startTime)
       };
     };
 
+    // On mouse movement, process the event
     const processEvent = (e: MouseEvent) => {
       const pt = getRelativePosition(e);
       pointProcessor.next(pt);
       stroke.points.push(pt);
     };
-
-    // On mouse movement, process the event
     document.addEventListener("mousemove", processEvent);
 
     // Remove event listeners on mouseup
     const done = (e: MouseEvent) => {
-      // Feed last event in
+      // Feed last mouse event to processing
       processEvent(e);
 
       document.removeEventListener("mousemove", processEvent);
@@ -255,4 +253,5 @@ class Controller {
   };
 }
 
+// Create single controller instance bound to dom
 const controller = new Controller();

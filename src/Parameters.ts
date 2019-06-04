@@ -1,15 +1,18 @@
-import { FloatColor } from "./Color.js";
+import { FloatColor, parseHex } from "./Color.js";
+import fromEntries from "./fromEntries.js";
 
-export type Parameter = RangeParameter | CheckboxParameter | ColorParameter;
+export type Parameter = ParameterBase &
+  (RangeParameter | CheckboxParameter | ColorParameter);
 
 export interface ParameterBase {
-  key: string;
+  key: keyof Parameters;
   label: string;
+  defaultValue: any;
 }
 
 export interface CheckboxParameter extends ParameterBase {
   type: "checkbox";
-  default: boolean;
+  defaultValue: boolean;
 }
 
 export interface RangeParameter extends ParameterBase {
@@ -17,12 +20,12 @@ export interface RangeParameter extends ParameterBase {
   min: number;
   max: number;
   step?: number;
-  default: number;
+  defaultValue: number;
 }
 
 export interface ColorParameter extends ParameterBase {
   type: "color";
-  default: string;
+  defaultValue: string;
 }
 
 export const parameterDefinitions: Parameter[] = [
@@ -32,7 +35,7 @@ export const parameterDefinitions: Parameter[] = [
     type: "range",
     min: 1,
     max: 128,
-    default: 0.5
+    defaultValue: 0.5
   },
   {
     key: "stepSize",
@@ -40,7 +43,7 @@ export const parameterDefinitions: Parameter[] = [
     type: "range",
     min: 0.01,
     max: 0.25,
-    default: 0.1
+    defaultValue: 0.1
   },
   {
     key: "opacity",
@@ -48,15 +51,15 @@ export const parameterDefinitions: Parameter[] = [
     type: "range",
     min: 0,
     max: 1,
-    default: 1.0
+    defaultValue: 1.0
   },
   {
     key: "movementMin",
-    label: "Movement Min",
+    label: "Input Min",
     type: "range",
     min: 0,
     max: 20,
-    default: 1.0
+    defaultValue: 1.0
   },
   {
     key: "sharpness",
@@ -64,19 +67,23 @@ export const parameterDefinitions: Parameter[] = [
     type: "range",
     min: 0,
     max: 1,
-    default: 0.8
+    defaultValue: 0.8
   },
   {
     key: "color",
     label: "Color",
     type: "color",
-    default: "#333333"
+    defaultValue: "#333333"
+  },
+  {
+    key: "debug",
+    label: "Debug",
+    type: "checkbox",
+    defaultValue: false
   }
 ];
 
-console.log("parameterDefinitions", parameterDefinitions);
-
-export type Parameters = {
+export type Parameters = Readonly<{
   brushSize: number;
   stepSize: number;
   opacity: number;
@@ -84,4 +91,34 @@ export type Parameters = {
   movementMin: number;
   sharpness: number;
   debug?: boolean;
+}>;
+
+export const sanitize = (u: Partial<Parameters>): Parameters => {
+  return fromEntries(
+    parameterDefinitions.map(p => {
+      const { key, type, defaultValue } = p;
+      const v = u[key];
+      if (v === undefined) {
+        return [key, defaultValue];
+      }
+      if (type === "range") {
+        const v = u[key];
+        return [key, parseFloat(v as any)];
+      } else if (type === "checkbox") {
+        return [key, !!v];
+      } else if (type === "color") {
+        if (
+          Array.isArray(v) &&
+          v.length === 4 &&
+          v.every(k => typeof k === "number")
+        ) {
+          return [key, v];
+        } else {
+          return [key, defaultValue];
+        }
+      } else {
+        throw new Error("Unknown type");
+      }
+    })
+  );
 };

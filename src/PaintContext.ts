@@ -3,8 +3,6 @@ import { Point2D } from "./point.js";
 import { FloatColor, parseHex } from "./Color.js";
 import { fragmentShader, vertexShader } from "./shaders.js";
 
-export type DrawBrushArgs = [Point2D, number, number, FloatColor];
-
 // Public API that the paint context should implement
 export interface PaintContextI {
   // Splat a brush image into the rendering destination
@@ -13,6 +11,8 @@ export interface PaintContextI {
   // Clear the buffer
   clear(color?: FloatColor): void;
 }
+
+export type DrawBrushArgs = Parameters<PaintContextI["drawBrush"]>;
 
 export type DrawBrushFn = PaintContextI["drawBrush"];
 
