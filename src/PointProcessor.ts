@@ -2,11 +2,9 @@ import { sub, length, evalBezier, Point2D, Dot2D } from "./point.js";
 import { catmullRomToBezier } from "./math.js";
 import { FloatColor } from "./Color.js";
 import { Parameters } from "./Parameters.js";
-import { DrawBrushFn, DrawBrushArgs } from "./PaintContext.js";
+import { DrawBrushFn } from "./PaintContext.js";
 
-export interface TimedPoint {
-  x: number;
-  y: number;
+export interface TimedPoint extends Point2D {
   // milliseconds since beginning of stroke
   t: number;
 }
@@ -29,6 +27,7 @@ function distanceFilter(distance: number, drawBrush: DrawBrushFn): DrawBrushFn {
 }
 
 // Returns nothing, but keep calling it with next(nextPoint) to pass more input
+// This generator will call drawBrush as appropriate
 export default function* PointProcessor(
   {
     brushSize,
@@ -39,13 +38,13 @@ export default function* PointProcessor(
     opacity,
     debug = false
   }: Parameters,
-  _drawBrush: DrawBrushFn
+  drawBrush: DrawBrushFn
 ): PointProcessorI {
   // Output points if we're in debug mode only
-  const debugPoint = debug ? _drawBrush : () => {};
+  const debugPoint = debug ? drawBrush : () => {};
 
   // Only draw if we've moved at least stepSize
-  const drawBrush = distanceFilter(stepSize * brushSize, _drawBrush);
+  const output = distanceFilter(stepSize * brushSize, drawBrush);
 
   // Multiply opacity into color value
   const finalColor = color.map(c => c * opacity) as FloatColor;
@@ -74,7 +73,7 @@ export default function* PointProcessor(
       debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
 
       pts.forEach(pt => {
-        drawBrush(pt, brushSize, sharpness, finalColor);
+        output(pt, brushSize, sharpness, finalColor);
       });
 
       // Debug vis

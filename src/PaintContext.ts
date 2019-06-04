@@ -71,14 +71,26 @@ export class PaintContextWebGL implements PaintContextI {
     };
   }
 
-  drawBrush(pt: Point2D, size: number, sharpness: number, color: FloatColor) {
+  drawBrush(
+    pt: Point2D,
+    brushSize: number,
+    sharpness: number,
+    color: FloatColor
+  ) {
     const { programUniforms, programAttribs, canvasSize } = this;
     const gl = this.gl;
     const pointGL = this.mouseToGL(pt.x, pt.y);
-    const r = canvasSize.width;
+    const width = canvasSize.width;
     gl.uniform2f(programUniforms.brushPosition, pointGL.x, pointGL.y);
-    gl.uniform1f(programUniforms.brushSize, size / canvasSize.width);
-    gl.uniform1f(programUniforms.brushSharpness, (r * sharpness - 1.5) / r);
+    gl.uniform1f(programUniforms.brushSize, brushSize / canvasSize.width);
+
+    const backingScale = 2;
+    // Convert sharpness to fade amount in backing pixels
+    const brushInPx = brushSize / backingScale;
+    // make sure it's always >= 1 px
+    const fadeDist = Math.max((1 - sharpness) * brushInPx, 1);
+    const sharpValue = 1 - fadeDist / brushInPx;
+    gl.uniform1f(programUniforms.brushSharpness, sharpValue);
     gl.uniform4fv(programUniforms.brushColor, color);
 
     gl.vertexAttribPointer(programAttribs.coord, 2, gl.FLOAT, false, 0, 0);
