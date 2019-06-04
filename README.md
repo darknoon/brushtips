@@ -1,5 +1,7 @@
 This is an experiment with brush drawing in WebGL, with code written in typescript. I am curious what features are needed for a good drawing experince.
 
+View live: http://brush.tips
+
 Features:
 
 - Accepts input at > screen refresh

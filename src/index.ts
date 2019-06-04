@@ -44,9 +44,46 @@ function html(templates: TemplateStringsArray, ...placeholders: string[]) {
 type ControlsMap = { [P in keyof Parameters]: HTMLInputElement };
 
 class Controller {
+  // Wrapper element of the controls
   controls = find("controls", HTMLDivElement);
 
+  // Lookup table of the controls
   controlsMap: ControlsMap;
+
+  clearButton = find("clear", HTMLButtonElement);
+
+  strokeDataOutput = find("stroke-data-output", HTMLTextAreaElement);
+
+  canvas = find("draw", HTMLCanvasElement);
+
+  // Interface to the actual drawing code
+  output: PaintContextI;
+
+  private currentStroke: Stroke | null = null;
+
+  constructor() {
+    this.controlsMap = this.createControls();
+    this.clearButton.onclick = this.clearCanvas;
+
+    this.restoreState();
+
+    const devicePixelRatio = window.devicePixelRatio || 1;
+
+    const canvas = this.canvas;
+    // set the size of the drawing buffer based on the size it's displayed.
+    canvas.width = canvas.clientWidth * devicePixelRatio;
+    canvas.height = canvas.clientHeight * devicePixelRatio;
+    canvas.onmousedown = this.handleMouseDown;
+
+    this.output = new PaintContextWebGL(canvas);
+
+    // Start with a stroke on the canvas for funzies
+    loadExample("spiral").then(s => {
+      this.currentStroke = s;
+      this.showStroke(s);
+      this.drawStroke(s, this.parameters);
+    });
+  }
 
   createControls(): ControlsMap {
     const label = (p: Parameter) => `<label for=${p.key}>${p.label}</label>`;
@@ -90,50 +127,18 @@ class Controller {
     );
   }
 
-  clearButton = find("clear", HTMLButtonElement);
-
-  strokeDataOutput = find("stroke-data-output", HTMLTextAreaElement);
-
-  canvas = find("draw", HTMLCanvasElement);
-
-  output: PaintContextI;
-
-  private currentStroke: Stroke | null = null;
-
-  constructor() {
-    this.controlsMap = this.createControls();
-    this.clearButton.onclick = this.clearOutput;
-
-    this.restoreState();
-
-    const devicePixelRatio = window.devicePixelRatio || 1;
-
-    const canvas = this.canvas;
-    // set the size of the drawing buffer based on the size it's displayed.
-    canvas.width = canvas.clientWidth * devicePixelRatio;
-    canvas.height = canvas.clientHeight * devicePixelRatio;
-    canvas.onmousedown = this.handleMouseDown;
-
-    this.output = new PaintContextWebGL(canvas);
-
-    // Start with a stroke on the canvas for funzies
-    loadExample("spiral").then(s => {
-      this.currentStroke = s;
-      this.showStroke(s);
-      this.drawStroke(s, this.parameters);
-    });
-  }
-
   restoreState() {
     const state = sessionStorage.getItem("brushParameters");
     if (state === null) return;
-    // type Partial = { [P in keyof Parameters]?: any };
-    const untrusted = JSON.parse(state);
-
-    this.parameters = sanitize(untrusted);
+    try {
+      const untrusted = JSON.parse(state);
+      this.parameters = sanitize(untrusted);
+    } catch (e) {
+      this.parameters = sanitize({});
+    }
   }
 
-  clearOutput = () => {
+  clearCanvas = () => {
     this.output.clear();
   };
 
@@ -149,25 +154,28 @@ class Controller {
   // Look at our controls' states and turn that back into a Parameters object
   get parameters(): Parameters {
     return fromEntries(
-      parameterDefinitions.map(d => {
-        const { key, type } = d;
-        // c can be undefined if the control wasn't in the map
-        // TODO: find a way to type ControlsMap to have exactly the keys of parameters
-        let c = this.controlsMap[key];
-        if (type === "color") {
-          const v = c ? parseHex(c.value) : d.defaultValue;
-          return [key, v];
-        } else if (type === "checkbox") {
-          const v = c ? c.checked : d.defaultValue;
-          return [key, v];
-        } else {
-          const v = c ? c.valueAsNumber : d.defaultValue;
-          return [key, v];
+      parameterDefinitions.map(
+        (d: Parameter): any => {
+          const { key, type } = d;
+          // c can be undefined if the control wasn't in the map
+          // TODO: find a way to type ControlsMap to have exactly the keys of parameters
+          let c = this.controlsMap[key];
+          if (type === "color") {
+            const v = c ? parseHex(c.value) : d.defaultValue;
+            return [key, v];
+          } else if (type === "checkbox") {
+            const v = c ? c.checked : d.defaultValue;
+            return [key, v];
+          } else {
+            const v = c ? c.valueAsNumber : d.defaultValue;
+            return [key, v];
+          }
         }
-      })
+      )
     );
   }
 
+  // Apply these parameter values to the current controls
   set parameters(p: Parameters) {
     parameterDefinitions.forEach(d => {
       const { key, type } = d;
@@ -191,7 +199,7 @@ class Controller {
   }
 
   private handleParameterChange = (e: Event) => {
-    this.clearOutput();
+    this.clearCanvas();
     sessionStorage.setItem("brushParameters", JSON.stringify(this.parameters));
     if (this.currentStroke) {
       this.drawStroke(this.currentStroke, this.parameters);
