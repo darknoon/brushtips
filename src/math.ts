@@ -1,6 +1,7 @@
 import { Dot2Dx4 } from "./point.js";
 
 export const clamp = (t: number) => Math.max(0, Math.min(t, 1));
+
 export const smoothstep = (edge0: number, edge1: number, x: number) => {
   const t = clamp((x - edge0) / (edge1 - edge0));
   return t * t * (3.0 - 2.0 * t);

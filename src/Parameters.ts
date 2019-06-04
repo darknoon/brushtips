@@ -35,7 +35,7 @@ export const parameterDefinitions: Parameter[] = [
     type: "range",
     min: 1,
     max: 128,
-    defaultValue: 0.5
+    defaultValue: 8
   },
   {
     key: "stepSize",

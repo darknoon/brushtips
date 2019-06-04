@@ -3,9 +3,7 @@ export interface Point2D {
   x: number;
   y: number;
 }
-export interface Dot2D {
-  x: number;
-  y: number;
+export interface Dot2D extends Point2D {
   r: number;
 }
 export type Dot2Dx4 = [Dot2D, Dot2D, Dot2D, Dot2D];
