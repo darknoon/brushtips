@@ -78,7 +78,7 @@ class Controller {
     this.output = new PaintContextWebGL(canvas);
 
     // Start with a stroke on the canvas for funzies
-    loadExample("spiral").then(s => {
+    loadExample("heart").then(s => {
       this.currentStroke = s;
       this.showStroke(s);
       this.drawStroke(s, this.parameters);
@@ -144,7 +144,10 @@ class Controller {
 
   drawStroke(stroke: Stroke, p: Parameters) {
     const pp = PointProcessor(p, this.output.drawBrush.bind(this.output));
-    stroke.points.forEach(p => pp.next(p));
+    let points = stroke.points;
+    points.slice(0, points.length - 1).forEach(p => pp.next(p));
+    let last = { ...points[points.length - 1], last: true };
+    pp.next(last);
   }
 
   showStroke(stroke: Stroke) {
@@ -238,17 +241,22 @@ class Controller {
     };
 
     // On mouse movement, process the event
-    const processEvent = (e: MouseEvent) => {
-      const pt = getRelativePosition(e);
-      pointProcessor.next(pt);
+    const processEvent = (e: MouseEvent, last?: boolean) => {
+      let pt = getRelativePosition(e);
+      // Don't write last into json
       stroke.points.push(pt);
+      // Do pass it to point processor
+      if (last) {
+        pt = { ...pt, last };
+      }
+      pointProcessor.next(pt);
     };
     document.addEventListener("mousemove", processEvent);
 
     // Remove event listeners on mouseup
     const done = (e: MouseEvent) => {
       // Feed last mouse event to processing
-      processEvent(e);
+      processEvent(e, true);
 
       document.removeEventListener("mousemove", processEvent);
       document.removeEventListener("mouseup", done);

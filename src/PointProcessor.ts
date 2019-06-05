@@ -7,12 +7,14 @@ import { DrawBrushFn } from "./PaintContext.js";
 export interface TimedPoint extends Point2D {
   // milliseconds since beginning of stroke
   t: number;
+  // is this the last point?
+  last?: boolean;
 }
 
 // This interface ensures you have to pass a TimedPoint to a point processor
 // typescript's generator support doesn't type the parameter of the next function
 interface PointProcessorI {
-  next(value: TimedPoint): void;
+  next(value: TimedPoint | null): void;
 }
 
 // Filter points that are close together (must move at least _distance_)
@@ -28,7 +30,7 @@ function distanceFilter(distance: number, drawBrush: DrawBrushFn): DrawBrushFn {
 
 // Returns nothing, but keep calling it with next(nextPoint) to pass more input
 // This generator will call drawBrush as appropriate
-export default function* PointProcessor(
+function* PointProcessor(
   {
     brushSize,
     stepSize,
@@ -56,30 +58,39 @@ export default function* PointProcessor(
   let p3 = yield;
 
   // Keep accepting points until we're done
-  while (true) {
+  do {
     const newPt = yield;
+    // Last point, we pass in null to trigger emitting the last segment
     // Reject point if step less than threshold
-    if (length(sub(p3, newPt)) > movementMin) {
-      // Shift in new point
-      [p0, p1, p2, p3] = [p1, p2, p3, newPt];
+    if (newPt.last === true || length(sub(p3, newPt)) > movementMin) {
+      let repeat = newPt.last ? 3 : 1;
+      for (let i = 0; i < repeat; i++) {
+        // Shift in new point
+        // if this is a repeat, fills up with newPoint over time
+        [p0, p1, p2, p3] = [p1, p2, p3, newPt];
 
-      const bez = catmullRomToBezier([p0, p1, p2, p3]);
+        const bez = catmullRomToBezier([p0, p1, p2, p3]);
 
-      // Estimate # of points in a very bad way.
-      // Since we use a filter that applies on output, it's OK to over-estimate
-      const ptCount = (length(sub(p0, p3)) / stepSize) * 2.0;
-      const pts = evalBezier(bez, ptCount);
+        // Estimate # of points in a very bad way.
+        // Since we use a filter that applies on output, it's OK to over-estimate
+        const ptCount = (length(sub(p0, p3)) / stepSize) * 2.0;
+        const pts = evalBezier(bez, ptCount);
 
-      debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
+        debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
 
-      pts.forEach(pt => {
-        output(pt, brushSize, sharpness, finalColor);
-      });
+        pts.forEach(pt => {
+          output(pt, brushSize, sharpness, finalColor);
+        });
 
-      // Debug vis
-      debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
-      debugPoint(bez[1], 4, 0, [1, 0, 0, 1]);
-      debugPoint(bez[2], 4, 0, [0, 1, 0, 1]);
+        // Debug vis
+        debugPoint(bez[0], 4, 0, [0, 0, 1, 1]);
+        debugPoint(bez[1], 4, 0, [1, 0, 0, 1]);
+        debugPoint(bez[2], 4, 0, [0, 1, 0, 1]);
+      }
     }
-  }
+  } while (!p3.last);
 }
+
+PointProcessor.extraEndPoints = 3;
+
+export default PointProcessor;
