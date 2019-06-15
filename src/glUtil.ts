@@ -1,8 +1,8 @@
 /**
- * Create a shader program from DOM elements
+ * Create a shader program from strings
  * @param gl Context in which to create program
- * @param vertexProgramId id of DOM element from which to grab the vertex shader
- * @param fragmentProgramId id of DOM element from which to grab the fragment shader
+ * @param vertexProgram text of vertex shader
+ * @param fragmentProgram text of fragment shader
  */
 export function makeProgram(
   gl: WebGLRenderingContext,

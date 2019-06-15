@@ -13,10 +13,12 @@ Features:
 
 Missing features:
 
+- Support mobile devices with touch APIs
+- Efficiency: write points to vertex buffer, then emit a single drawcall
 - Variable brush diameter with velocity
 - Other brush dynamics
 - Smoothing of input points during a stroke
-- Last stroke segment dynamically (see Notes.app on iOS)
+- Draw last stroke segment dynamically (see Notes.app on iOS)
 - Dithering
 - Texture
 
